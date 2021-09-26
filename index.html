@@ -1,0 +1,35 @@
+<html>
+<head>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+
+<style>
+body
+{
+	display:	flex;
+	margin:		0px;
+	background:	red;
+}
+canvas
+{
+	flex-grow:1;
+	background:	black;
+}
+video
+{
+	display:none;
+}
+</style>
+</head>
+<body>
+<video class="input_video"></video>
+<canvas id=C>
+<script type=module>
+import Loop from './Toaster.js'
+Loop(C);
+</script>
+</body>
+</html>
