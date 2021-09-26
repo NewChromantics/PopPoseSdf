@@ -123,16 +123,24 @@ export default class Game_t
 	
 	UpdatePose(Joints)
 	{
-		Joints = Joints || [];
+		if ( !Joints )
+			return;
 		
 		function ConvertXyz(Position)
 		{
-			if ( Position.visibility < 0.6 )
-				return null;
-			let Scale = 4;
-			return [Position.x*Scale,Position.z*Scale,Position.y*Scale];
+			//if ( Position.visibility < 0.6 )
+			//	return null;
+			//	https://google.github.io/mediapipe/solutions/pose.html
+			//	x and y: Landmark coordinates normalized to [0.0, 1.0] by the image width and height respectively.
+			//	z: Represents the landmark depth with the depth at the midpoint of hips being the origin, and the smaller the value the closer the landmark is to the camera. The magnitude of z uses roughly the same scale as x.
+			//	visibility: A value in [0.0, 1.0] indicating the likelihood of the landmark being visible (present and not occluded) in the image.
+			let x = Position.x - 0.5;
+			let y = 1-Position.y + 0.3;
+			let z = -Position.z;
+			//z = 0;
+			return [x,y,z];
 		}
-		Joints = Joints.map( ConvertXyz ).filter( p => p!=null );
+		Joints = Joints.map( ConvertXyz );
 		
 		//this.Track.Points = Joints;
 		

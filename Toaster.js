@@ -6,6 +6,9 @@ import {Lerp,Add3,MatrixInverse4x4} from './PopEngine/Math.js'
 
 import Game_t from './PoseGame.js'
 import {CreatePromise,Yield} from './TinyWebgl.js'
+import Pop from './PopEngine/PopEngine.js'
+import {CreateCubeGeometry} from './PopEngine/CommonGeometry.js'
+import {NormalToRainbow} from './PopEngine/Colour.js'
 
 
 const VertSource = `
@@ -35,14 +38,16 @@ void main()
 
 
 const Camera = new Camera_t();
-Camera.Position = [ 0,1.00,0.00001 ];
+Camera.Position = [ 0.5,1.00,3.00001 ];
 Camera.LookAt = [ 0,0,0 ];
 Camera.FovVertical = 70;
 
 let LastRenderTargetRect = [0,0,1,1];
+let LastScreenRect = null;
 		
 function GetCameraUniforms(Uniforms,ScreenRect)
 {
+	LastScreenRect = ScreenRect;
 	LastRenderTargetRect = [0,0,1,ScreenRect[3]/ScreenRect[2]];
 	Uniforms.WorldToCameraTransform = Camera.GetWorldToCameraMatrix();
 	Uniforms.CameraProjectionTransform = Camera.GetProjectionMatrix( LastRenderTargetRect );
@@ -53,109 +58,150 @@ function GetCameraUniforms(Uniforms,ScreenRect)
 
 
 const InputState = {};
-InputState.MouseButtonsDown = {};	//	key=button value=uv
-		
+class InputValue_t
+{
+	constructor(uv,px,Force=1)
+	{
+		this.uv = uv;
+		this.px = px;
+		this.Force = Force;
+	}
+}
+InputState.MouseButtonsDown = {};	//	key=button value=InputValue_t
+
+
 function Range(Min,Max,Value)
 {
 	return (Value-Min) / (Max-Min);
 }
 
-function GetMouseUv(Event)
-{
-	Element = Event.currentTarget;
-	const Rect = Element.getBoundingClientRect();
-	const ClientX = Event.pageX || Event.clientX;
-	const ClientY = Event.pageY || Event.clientY;
+function GetMouseValue(x,y,Button)
+{	
+	const Rect = {};
+	//	gr: screen rect is window space
+	//		xy is renderview space, so ignore x/y
+	Rect.left = 0
+	Rect.right = Rect.left + LastScreenRect[2];
+	Rect.top = 0;
+	Rect.bottom = Rect.top + LastScreenRect[3];
+	const ClientX = x;
+	const ClientY = y;
 	const u = Range( Rect.left, Rect.right, ClientX ); 
 	const v = Range( Rect.top, Rect.bottom, ClientY ); 
-	return [u,v,ClientX,ClientY];
+	
+	let Input = new InputValue_t();
+	Input.uv = [u,v]; 
+	Input.px = [ClientX,ClientY]; 
+	return Input;
 }
 
 
 //	return true to notify we used the input and don't pass onto game
-function HandleMouse(Button,uv,FirstDown)
+function HandleMouse(Button,InputValue,FirstDown)
 {
+	if ( Button == 'Right' )
+	{
+		//	should just get px from event!	
+		const [x,y] = InputValue.px;
+		Camera.OnCameraOrbit( x, y, 0, FirstDown );
+		return true;
+	}
+	
+	if ( Button == GetWheelButton() )
+	{
+		Camera.OnCameraZoom( -InputValue.Force );
+		return true;
+	}
+
 	return false;
-	if ( Button != 'Right' )
-		return false;
-
-	//	should just get px from event!	
-	const x = uv[2];
-	const y = uv[3];
-	Camera.OnCameraOrbit( x, y, 0, FirstDown );
-
-	return true;
 }
 
 function HtmlMouseToButton(Button)
 {
 	return ['Left','Middle','Right','Back','Forward'][Button];
 }
-
-function MouseMove(Event)
+function GetHoverButton()
 {
-	let uv = GetMouseUv(Event);
+	return 'Hover';
+}
+function GetWheelButton()
+{
+	return 'Wheel';
+}
+
+function OnMouseMove(x,y,Button)
+{
+	let Value = GetMouseValue(x,y,Button);
+	if ( Button === null )
+		Button = GetHoverButton();
 	
+	if ( HandleMouse( Button, Value, false ) )
+		return;
+		
+	InputState.MouseButtonsDown[Button] = Value;
+	/*
 	//	update all buttons
 	const Buttons = Event.buttons || 0;	//	undefined if touches
 	const ButtonMasks = [ 1<<0, 1<<2, 1<<1 ];	//	move button bits do NOT match mouse events
 	const ButtonsDown = ButtonMasks.map( (Bit,Button) => (Buttons&Bit)?HtmlMouseToButton(Button):null ).filter( b => b!==null );
 	
+	if ( !ButtonsDown.length )
+		ButtonsDown.push(GetHoverButton()); 
+	
 	function OnMouseButton(Button)
 	{
-		if ( HandleMouse( Button, uv, false ) )
+		if ( HandleMouse( Button, Value, false ) )
 			return;
-		InputState.MouseButtonsDown[Button] = uv.slice(0,2);
-	}	
-	ButtonsDown.forEach(OnMouseButton);
-}
-
-function MouseDown(Event)
-{
-	let uv = GetMouseUv(Event);
-	const Button = HtmlMouseToButton(Event.button);
-	if ( HandleMouse( Button, uv, true ) )
-	{
-		Event.preventDefault();
-		return;
+		InputState.MouseButtonsDown[Button] = Value;
 	}
-	console.log(`MouseDown ${uv} Button=${Button}`);
-	InputState.MouseButtonsDown[Button] = uv.slice(0,2);
+	ButtonsDown.forEach(OnMouseButton);
+	*/
+	
 }
 
-function MouseUp(Event)
+function OnMouseDown(x,y,Button)
 {
-	let uv = GetMouseUv(Event);
-	//console.log(`Mouseup ${uv}`);
-	const Button = HtmlMouseToButton(Event.button);
+	delete InputState.MouseButtonsDown[GetHoverButton()];
+
+	let Value = GetMouseValue(x,y,Button);
+	if ( HandleMouse( Button, Value, true ) )
+		return;
+
+	InputState.MouseButtonsDown[Button] = Value;
+}
+
+function OnMouseUp(x,y,Button)
+{
+	let Value = GetMouseValue(x,y,Button);
 	delete InputState.MouseButtonsDown[Button];
 }
 
-function MouseWheel(Event)
+function OnMouseScroll(x,y,Button,WheelDelta)
 {
-	let uv = GetMouseUv(Event);
+	//	gr should update mouse here?
+	Button = GetWheelButton();
+	let Value = GetMouseValue(x,y,Button);
 	//console.log(`MouseWheel ${uv}`);
-}
-
-function MouseContextMenu(Event)
-{
-	Event.preventDefault();
-	return;
-}
-
-
-function BindEvents(Element)
-{
-	Element.addEventListener('mousemove', MouseMove );
-	Element.addEventListener('wheel', MouseWheel, false );
-	Element.addEventListener('contextmenu', MouseContextMenu, false );
-	Element.addEventListener('mousedown', MouseDown, false );
-	Element.addEventListener('mouseup', MouseUp, false );
 	
-	Element.addEventListener('touchmove', MouseMove );
-	Element.addEventListener('touchstart', MouseDown, false );
-	Element.addEventListener('touchend', MouseUp, false );
-	Element.addEventListener('touchcancel', MouseUp, false );
+	Value.Force = WheelDelta[1];
+
+	//const Button = GetWheelButton();
+
+	if ( HandleMouse( Button, Value, true ) )
+		return;
+	
+	//	need to either auto-remove this state once read, or maybe we need an event queue (probably that)
+	InputState.MouseButtonsDown[Button] = Value;
+}
+
+
+
+function BindEvents(RenderView)
+{
+	RenderView.OnMouseDown = OnMouseDown;
+	RenderView.OnMouseMove = OnMouseMove;
+	RenderView.OnMouseUp = OnMouseUp;
+	RenderView.OnMouseScroll = OnMouseScroll;
 }
 
 function GetInputRays()
@@ -166,7 +212,7 @@ function GetInputRays()
 	
 	for ( let Button of Object.keys(InputState.MouseButtonsDown) )
 	{
-		const uv = InputState.MouseButtonsDown[Button];
+		const uv = InputState.MouseButtonsDown[Button].uv;
 		const Ray = GetRayFromCameraUv(uv);
 		State3[Button] = Ray;
 	}
@@ -182,58 +228,83 @@ function GetRayFromCameraUv(uv)
 }
 
 
+export class SceneManager_t
+{
+	constructor()
+	{
+	}
+	
+	GetBoundingBox()
+	{
+		let Size = 100;
+		const Box = {};
+		Box.Min = [-Size,-Size,-Size];
+		Box.Max = [Size,Size,Size];
+		return Box;
+	}
+	
+	GetObjectUniforms()
+	{
+		return {};
+	}
+}
 
 async function RenderLoop(Canvas,GetGame)
 {
-	BindEvents(Canvas);
-	const Context = new GlContext_t(Canvas);
-	const Shader = Context.CreateShader( VertSource, FragSource );
-	const Cube = Context.CreateCubeGeo( Shader );
-	while(true)
-	{
-		let Game = GetGame();
-		
-		const TimeDelta = 1/60;
-		let Time = await Context.WaitForFrame();
-		Time = Time % 1;
-		Context.Clear([1,Time,0,1]);
-		
-		if ( Game )
-		{
-			Game.Iteration(TimeDelta,GetInputRays());
-			
-			//	camera follow car
-			const FollowCar = Game.Cars[0];
-			Camera.Position = [ 0,1.00,-6.00001 ];
-			//Camera.LookAt = FollowCar.Position.slice();
-			Camera.LookAt = [0,1,0];
-			/*
-			const CameraDistance = Lerp( 2.0, 2.0, FollowCar.SpeedNormal );
-			Camera.Position.splice(0,3);
-			Camera.Position.push( ...Add3( Camera.LookAt, [0.001,CameraDistance,0.001] ) );
-			*/
-		}
-		
-		
-		const Uniforms = {};
+	let Window;
+	//let Window = new Pop.Gui.Window();
+	let RenderView = new Pop.Gui.RenderView(Window,Canvas);
+	let Context = new Pop.Sokol.Context(RenderView);
 
+	BindEvents(RenderView);
+
+	const SceneShader = await Context.CreateShader( VertSource, FragSource );
+	const CubeGeo = CreateCubeGeometry();
+	const SceneCube = await Context.CreateGeometry( CubeGeo );
+	
+	const Scene = new SceneManager_t();
+	
+	async function RenderScene(Game)
+	{
+		if ( !SceneShader )
+			return;
+		const Uniforms = {};
 		GetCameraUniforms(Uniforms,Context.GetScreenRect());
 		
 		if ( Game )
 			Object.assign(Uniforms,Game.GetUniforms());
-			
-		//	bounding box
-		let w=0.40,h=0.20,d=0.20;	//	toaster cm
-		w=h=d=100;
-		Uniforms.WorldMin = [-w,-h,-d];
-		Uniforms.WorldMax = [w,h,d];
-		Uniforms.TimeNormal = Time;
 
+		//	bounding box
+		const SceneBounds = Scene.GetBoundingBox();
+		Uniforms.WorldMin = SceneBounds.Min;
+		Uniforms.WorldMax = SceneBounds.Max;
+		//Object.assign( Uniforms, Scene.GetObjectUniforms() );
+		//Context.Draw(SceneCube,SceneShader,Uniforms);
+		return ['Draw',SceneCube,SceneShader,Uniforms];
+	}
+	
+	
+	while(true)
+	{
+		let Game = GetGame();
+		let Time = 0;
 		
-		Context.Draw(Cube,Shader,Uniforms);
-		//let Pixels = Context.ReadPixels();
-		//Pixels = Pixels.slice(0,4);
-		//GameState.LastHoverMaterial = Pixels[0];
+		const TimeDelta = 1/60;
+		
+		if ( Game )
+		{
+			Game.Iteration(TimeDelta,GetInputRays());
+		}
+
+		//	render
+		Time = Time/100 % 1;
+		const ClearColour = NormalToRainbow(Time);
+		const ClearCmd = ['SetRenderTarget',null,ClearColour];
+		
+		const SceneCmd = await RenderScene(Game);
+	
+		const RenderCommands = [ClearCmd,SceneCmd].filter( c => c!=null );
+		await Context.Render(RenderCommands);
 	}
 }
 

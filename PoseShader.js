@@ -4,7 +4,7 @@ varying vec3 WorldPosition;
 varying vec4 OutputProjectionPosition;
 uniform mat4 CameraToWorldTransform;
 uniform vec3 WorldLightPosition;
-#define FloorY	10.011
+#define FloorY	0.011
 #define FarZ	20.0
 #define WorldUp	vec3(0,1,0)
 
@@ -44,10 +44,9 @@ uniform float CarAngles[CAR_COUNT];
 #define CarMaterial(c) (99.0+float(c))
 #define CarAngle(c) CarAngles[c]
 
-#define TRACK_POINT_COUNT	3
-uniform vec2 TrackPoints[TRACK_POINT_COUNT];
 
-#define MAX_STEPS	20
+#define MAX_STEPS	30
+#define HIT_NEAR_ENOUGH_DISTANCE	0.001
 
 void GetMouseRay(out vec3 RayPos,out vec3 RayDir)
 {
@@ -135,7 +134,8 @@ vec2 sdFloor(vec3 Position,vec3 Direction)
 	float d = sdPlane(Position,WorldUp,FloorY);
 	float tp1 = ( Position.y <= FloorY ) ? 1.0 : 0.0;
 	/*
-	float tp1 = (Position.y-FloorY)/Direction.y;
+	//	are we on the right side
+	tp1 = (Position.y-FloorY)/Direction.y;
 	if ( tp1 > 0.0 )
 	{
 		//d = tp1;	//	gr: why is sdPlane distance wrong? but right in map() 
@@ -164,44 +164,48 @@ dm_t Closest(dm_t a,dm_t b)
 }
 
 
-dm_t sdCar(vec3 Position,vec3 CarPosition,float CarAngle,float CarMaterial)
+
+#define sdBone(Position,a,b)	sdCapsule( Position, CarPositions[a], CarPositions[b], BoneRadius )
+
+dm_t sdSkeleton(vec3 Position)
 {
-	return dm_t( sdSphere(Position,vec4(CarPosition,0.1)), CarMaterial );
-	//	move to car localspace
-	//	inverse transform
-	Position -= CarPosition;
-	Position.xz = rotate(Position.xz, -radians(CarAngle));
-	Position += CarPosition;
-
-	float ChasisHeight = 0.04;
-	vec3 BottomSize = vec3( 0.1, 0.02, 0.3 );
-	vec3 TopSize = vec3( BottomSize.x, 0.04, 0.1 );
-	vec3 BottomOffset = vec3(0,BottomSize.y+ChasisHeight,0);
-	vec3 TopOffset = BottomOffset + vec3(0,TopSize.y,0);
-	float EdgeRadius = 0.03;
-
-	float Bottom = sdBox( Position, CarPosition+BottomOffset, BottomSize/2.0 );
-	Bottom -= EdgeRadius;
-	float Top = sdBox( Position, CarPosition+TopOffset, TopSize/2.0 );
-	Top -= EdgeRadius;
+	//for ( int c=0;	c<CAR_COUNT;	c++ )
+	//	d = Closest( d, sdCar( Position, CarPositions[c], CarAngle(c), CarMaterial(c) ) );
 	
-	float Smooth = 0.04;
-	float Distance = opSmoothUnion( Bottom, Top, Smooth );
-	dm_t Body = dm_t( Distance, CarMaterial );
+	float BoneRadius = 0.04;
+	float Smoothk = 0.1;
 	
-	return Body;
+	//	https://google.github.io/mediapipe/solutions/pose.html
+	float d = 999.0;
+	
+	d = opSmoothUnion( d, sdBone(Position,	8,0	), Smoothk );
+	d = opSmoothUnion( d, sdBone(Position,	0,7	), Smoothk );
+	d = opSmoothUnion( d, sdBone(Position,	9,10	), Smoothk );
+	
+	d = opSmoothUnion( d, sdBone(Position,	0,11	), Smoothk );
+	d = opSmoothUnion( d, sdBone(Position,	0,12	), Smoothk );
+	
+	d = opSmoothUnion( d, sdBone(Position,	12,14	), Smoothk );
+	d = opSmoothUnion( d, sdBone(Position,	14,16	), Smoothk );
+
+	d = opSmoothUnion( d, sdBone(Position,	11,13	), Smoothk );
+	d = opSmoothUnion( d, sdBone(Position,	13,15	), Smoothk );
+	
+	d = opSmoothUnion( d, sdBone(Position,	12,24	), Smoothk );
+	d = opSmoothUnion( d, sdBone(Position,	11,23	), Smoothk );
+	d = opSmoothUnion( d, sdBone(Position,	11,12	), Smoothk );
+	d = opSmoothUnion( d, sdBone(Position,	23,24	), Smoothk );
+
+	return dm_t( d, CarMaterial(0) );
 }
 
 
 dm_t Map(vec3 Position,vec3 Dir)
 {
 	dm_t d = dm_t(999.0,Mat_None);
-	//d = Closest( d, sdSphere( Position, vec4(0,0,0,0.10) );
 	
-	//d = Closest( d, dm_t( sdMouseRay(Position), Mat_Red ) );
 	d = Closest( d, dm_t( sdFloor(Position,Dir).x, Mat_Floor ) );
-	for ( int c=0;	c<CAR_COUNT;	c++ )
-		d = Closest( d, sdCar( Position, CarPositions[c], CarAngle(c), CarMaterial(c) ) );
+	d = Closest( d, sdSkeleton(Position) );
 	return d;
 }
 
@@ -229,9 +233,8 @@ dmh_t GetRayCastDistanceHeatMaterial(vec3 RayPos,vec3 RayDir)
 	float DidHitFloor = 0.0;
 	
 	//	gr: for some reason, this I think is really small and we hit it straight away??
-	//float MaxDistance = mix( FarZ, FloorTop.x, DidHitFloor );
-	//
-	float MaxDistance = FarZ;
+	float MaxDistance = mix( FarZ, FloorTop.x, DidHitFloor );
+	//float MaxDistance = FarZ;
 	
 	float RayDistance = 0.0;
 	float HitMaterial = mix(Mat_None,Mat_Floor,DidHitFloor);	//	change to material later. 0 = miss
@@ -246,10 +249,12 @@ dmh_t GetRayCastDistanceHeatMaterial(vec3 RayPos,vec3 RayDir)
 		if ( RayDistance >= MaxDistance )
 		{
 			RayDistance = MaxDistance;
-			HitMaterial = Mat_Red;
+			//HitMaterial = Mat_Red;
+			RayDistance = sdFloor(RayPos,RayDir).x;
+			HitMaterial = Mat_Floor;
 			break;
 		}
-		if ( StepDistanceMat.x < 0.001 )
+		if ( StepDistanceMat.x < HIT_NEAR_ENOUGH_DISTANCE )
 		{
 			HitMaterial = StepDistanceMat.y;
 			break;
@@ -399,81 +404,21 @@ float GetTrackPointDistance(vec2 FloorPosition,vec2 Prev,vec2 This,vec2 Next)
 }
 
 
-float GetTrackDistance(vec2 FloorPosition)
-{
-	float Distance = 9999.0;
-
-	//	bezier curves dont follow	
-	for ( int tp=0;	tp<TRACK_POINT_COUNT-2;	tp+=1 )
-	{
-		float d = GetTrackPointDistance( FloorPosition, TrackPoints[tp+0], TrackPoints[tp+1], TrackPoints[tp+2] );
-		Distance = min(d,Distance);
-	}
-	float e = GetTrackPointDistance( FloorPosition, TrackPoints[TRACK_POINT_COUNT-2], TrackPoints[TRACK_POINT_COUNT-1], TrackPoints[0] );
-	float f = GetTrackPointDistance( FloorPosition, TrackPoints[TRACK_POINT_COUNT-1], TrackPoints[0], TrackPoints[1] );
-	Distance = min(e,Distance);
-	Distance = min(f,Distance);
-
-	return Distance;// - TrackWidth;
-}
-
-
-float GetCheckpointDistance(vec2 FloorPosition)
-{
-	float Distance = 9999.0;
-
-	//	bezier curves dont follow	
-	for ( int tp=0;	tp<TRACK_POINT_COUNT;	tp++ )
-	{
-		float d = length( FloorPosition - TrackPoints[tp+0] );
-		d -= CheckpointWidth;
-		Distance = min(d,Distance);
-	}
-	return Distance;
-}
-
-vec4 GetTrackColour(vec2 FloorPosition)
-{
-	float Noise = rand( floor(FloorPosition.xyy*200.0) );
-	float MaxDistance = Noise * 0.41;
-
-	float TrackDistance = GetTrackDistance(FloorPosition);
-	float Alpha = 1.0 - (max(0.0,TrackDistance) / MaxDistance);
-	if ( TrackDistance > MaxDistance )
-		return vec4(0,0,0,0);
-	
-	#define CheckpointColour	vec3(0.5,0,0)
-	float CheckpointDistance = GetCheckpointDistance(FloorPosition);
-	if ( CheckpointDistance <= 0.0 )
-		return vec4( CheckpointColour, 0.5 );
-	
-	#define TrackGreyA 0.25
-	#define TrackGreyB 0.15
-	float Colour = mix( TrackGreyA, TrackGreyB, Noise );
-	
-	return vec4(Colour,Colour,Colour,Alpha*0.9);
-}
-
-
-
 vec3 GetFloorColour(vec3 WorldPosition,vec3 WorldNormal)
 {
 	float CheqSize = 0.5;
-	vec2 Chequer = rotate( WorldPosition.xz, 0.6);
+	vec2 Chequer = rotate( WorldPosition.xz, 0.0);
 	//vec2 Chequer = rotate( WorldPosition.xy, 0.4);
 	Chequer = mod( Chequer, CheqSize ) / CheqSize;
 	bool x = Chequer.x < 0.5;
 	bool y = Chequer.y < 0.5;
 	vec3 Colour = (x==y) ? FloorBlue : FloorWhite;
+	if ( WorldPosition.x < 0.0 )
+		Colour = Colour.xzy;
+	if ( WorldPosition.z < 0.0 )
+		Colour = Colour.yxz;
 	//return GetLitColour(WorldPosition,WorldNormal,Colour,0.0);
 	
-	vec4 TrackColour = GetTrackColour(WorldPosition.xz);
-	Colour = mix( Colour, TrackColour.xyz, TrackColour.w );
-	
-	//float DistanceToMouse = sdMouseRay(WorldPosition);
-	//if ( DistanceToMouse <= 0.9 )
-	//	Colour = PinkColour;
-
 	return Colour;	
 }
 
@@ -591,7 +536,7 @@ void main()
 		
 	//Colour.xyz *= mix(1.0,0.7,HitDistance.y);	//	ao from heat
 
-	/*
+	
 	float Shadowk = 1.70;
 	vec3 ShadowRayPos = HitPos+Normal*0.0051;
 	vec3 ShadowRayDir = normalize(WorldLightPosition-HitPos);
@@ -599,7 +544,7 @@ void main()
 	//float Shadow = softshadow( WorldLightPosition, -ShadowRayDir, Shadowk );
 	//float Shadow = HardShadow( ShadowRayPos, ShadowRayDir );
 	Colour.xyz *= mix( ShadowMult, 1.0, Shadow );//Shadow * ShadowMult;
-*/
+
 	gl_FragColor = Colour;
 	//if ( Colour.w == 0.0 )	discard;
 }
