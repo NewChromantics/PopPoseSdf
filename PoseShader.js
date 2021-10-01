@@ -167,34 +167,56 @@ dm_t Closest(dm_t a,dm_t b)
 
 #define sdBone(Position,a,b)	sdCapsule( Position, CarPositions[a], CarPositions[b], BoneRadius )
 
+#define JOINT_NOSE			0
+#define JOINT_LEFT_EYE		2
+#define JOINT_RIGHT_EYE		5
+#define JOINT_LEFT_EAR		7
+#define JOINT_RIGHT_EAR		8
+#define JOINT_LEFT_MOUTH	9
+#define JOINT_RIGHT_MOUTH	10
+#define JOINT_LEFT_SHOULDER	11
+#define JOINT_RIGHT_SHOULDER	12
+#define JOINT_LEFT_ELBOW	13
+#define JOINT_RIGHT_ELBOW	14
+#define JOINT_LEFT_WRIST	15
+#define JOINT_RIGHT_WRIST	16
+#define JOINT_LEFT_HIP		23
+#define JOINT_RIGHT_HIP		24
+
+
 dm_t sdSkeleton(vec3 Position)
 {
 	//for ( int c=0;	c<CAR_COUNT;	c++ )
 	//	d = Closest( d, sdCar( Position, CarPositions[c], CarAngle(c), CarMaterial(c) ) );
 	
 	float BoneRadius = 0.04;
-	float Smoothk = 0.1;
+	float Smoothk = 0.05;
 	
 	//	https://google.github.io/mediapipe/solutions/pose.html
 	float d = 999.0;
 	
-	d = opSmoothUnion( d, sdBone(Position,	8,0	), Smoothk );
-	d = opSmoothUnion( d, sdBone(Position,	0,7	), Smoothk );
-	d = opSmoothUnion( d, sdBone(Position,	9,10	), Smoothk );
-	
-	d = opSmoothUnion( d, sdBone(Position,	0,11	), Smoothk );
-	d = opSmoothUnion( d, sdBone(Position,	0,12	), Smoothk );
-	
-	d = opSmoothUnion( d, sdBone(Position,	12,14	), Smoothk );
-	d = opSmoothUnion( d, sdBone(Position,	14,16	), Smoothk );
+	d = opSmoothUnion( d, sdBone(Position,	JOINT_LEFT_EAR,JOINT_RIGHT_EAR	), Smoothk );
+	//d = opSmoothUnion( d, sdBone(Position,	JOINT_LEFT_EYE,JOINT_RIGHT_EYE	), Smoothk );
+	//d = opSmoothUnion( d, sdBone(Position,	JOINT_RIGHT_EAR,JOINT_NOSE	), Smoothk );
+	//d = opSmoothUnion( d, sdBone(Position,	JOINT_NOSE,JOINT_LEFT_EAR	), Smoothk );
+	//d = opSmoothUnion( d, sdBone(Position,	JOINT_LEFT_MOUTH,JOINT_RIGHT_MOUTH	), Smoothk );
 
-	d = opSmoothUnion( d, sdBone(Position,	11,13	), Smoothk );
-	d = opSmoothUnion( d, sdBone(Position,	13,15	), Smoothk );
+	d = opSmoothUnion( d, sdBone(Position,	JOINT_LEFT_EAR,JOINT_LEFT_SHOULDER	), Smoothk );
+	d = opSmoothUnion( d, sdBone(Position,	JOINT_RIGHT_EAR,JOINT_RIGHT_SHOULDER	), Smoothk );
 	
-	d = opSmoothUnion( d, sdBone(Position,	12,24	), Smoothk );
-	d = opSmoothUnion( d, sdBone(Position,	11,23	), Smoothk );
-	d = opSmoothUnion( d, sdBone(Position,	11,12	), Smoothk );
-	d = opSmoothUnion( d, sdBone(Position,	23,24	), Smoothk );
+	//d = opSmoothUnion( d, sdBone(Position,	JOINT_NOSE,JOINT_LEFT_SHOULDER	), Smoothk );
+	//d = opSmoothUnion( d, sdBone(Position,	JOINT_NOSE,JOINT_RIGHT_SHOULDER	), Smoothk );
+	
+	d = opSmoothUnion( d, sdBone(Position,	JOINT_RIGHT_SHOULDER,JOINT_RIGHT_ELBOW	), Smoothk );
+	d = opSmoothUnion( d, sdBone(Position,	JOINT_RIGHT_ELBOW,JOINT_RIGHT_WRIST	), Smoothk );
+
+	d = opSmoothUnion( d, sdBone(Position,	JOINT_LEFT_SHOULDER,JOINT_LEFT_ELBOW	), Smoothk );
+	d = opSmoothUnion( d, sdBone(Position,	JOINT_LEFT_ELBOW,JOINT_LEFT_WRIST	), Smoothk );
+	
+	d = opSmoothUnion( d, sdBone(Position,	JOINT_RIGHT_SHOULDER,JOINT_RIGHT_HIP	), Smoothk );
+	d = opSmoothUnion( d, sdBone(Position,	JOINT_LEFT_SHOULDER,JOINT_LEFT_HIP	), Smoothk );
+	d = opSmoothUnion( d, sdBone(Position,	JOINT_LEFT_SHOULDER,JOINT_RIGHT_SHOULDER	), Smoothk );
+	d = opSmoothUnion( d, sdBone(Position,	JOINT_LEFT_HIP,JOINT_RIGHT_HIP	), Smoothk );
 
 	return dm_t( d, CarMaterial(0) );
 }

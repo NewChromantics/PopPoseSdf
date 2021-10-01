@@ -87,12 +87,12 @@ export default class Game_t
 		}});
 		
 		this.Pose.setOptions({
-			modelComplexity: 1,
+			modelComplexity: 0,	//	0,1,2
 			smoothLandmarks: true,
-			enableSegmentation: true,
-			smoothSegmentation: true,
-			minDetectionConfidence: 0.5,
-			minTrackingConfidence: 0.5
+			enableSegmentation: false,
+			smoothSegmentation: false,
+			minDetectionConfidence: 0.3,
+			minTrackingConfidence: 0.3
 		});
 		this.Pose.onResults( Results => this.NewPoseQueue.Push(Results) );
 		
@@ -105,8 +105,8 @@ export default class Game_t
 		const CameraOptions = 
 		{
 			onFrame: OnCameraFrame,
-			width:1280,
-			height:720
+			width:640,
+			height:480
 		};		
 		this.Camera = new window.Camera(videoElement,CameraOptions);
 		this.Camera.start();
